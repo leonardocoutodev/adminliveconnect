@@ -34,6 +34,17 @@ export default {
     try {
       const sql = db(env);
 
+      if (url.pathname === "/api/db-test" && request.method === "GET") {
+        const r = await sql.query(`
+          SELECT
+            current_database() AS database,
+            current_schema() AS schema,
+            (SELECT count(*) FROM companies) AS companies,
+            (SELECT count(*) FROM contacts) AS contacts
+        `);
+        return json({ ok: true, ...r[0] });
+      }
+
       if (url.pathname === "/api/campaign" && request.method === "GET") {
         const r = await sql.query("SELECT * FROM campaigns WHERE active=true ORDER BY id DESC LIMIT 1");
         return json(r[0] || null);
