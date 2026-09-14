@@ -1,4 +1,4 @@
-import { Client } from "pg";
+import { neon } from "@neondatabase/serverless";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -11,15 +11,9 @@ const json = (data, status = 200) => new Response(JSON.stringify(data), {
   headers: { ...CORS, "Content-Type": "application/json; charset=utf-8" }
 });
 
-async function query(env, text, params = []) {
-  if (!env.HYPERDRIVE) throw new Error("Hyperdrive ainda nao configurado");
-  const client = new Client({ connectionString: env.HYPERDRIVE.connectionString });
-  try {
-    await client.connect();
-    return await client.query(text, params);
-  } finally {
-    await client.end();
-  }
+function db(env) {
+  if (!env.DATABASE_URL) throw new Error("DATABASE_URL ainda nao configurada");
+  return neon(env.DATABASE_URL);
 }
 
 function authorized(request, env) {
@@ -32,30 +26,30 @@ export default {
     const url = new URL(request.url);
 
     if (url.pathname === "/api/health") {
-      return json({ ok: true, service: "live-connect-prospeccao", database: !!env.HYPERDRIVE });
+      return json({ ok: true, service: "live-connect-prospeccao", database: !!env.DATABASE_URL });
     }
 
     if (!authorized(request, env)) return json({ ok: false, error: "Nao autorizado" }, 401);
 
     try {
+      const sql = db(env);
+
       if (url.pathname === "/api/campaign" && request.method === "GET") {
-        const r = await query(env, "SELECT * FROM campaigns WHERE active=true ORDER BY id DESC LIMIT 1");
-        return json(r.rows[0] || null);
+        const r = await sql.query("SELECT * FROM campaigns WHERE active=true ORDER BY id DESC LIMIT 1");
+        return json(r[0] || null);
       }
 
       if (url.pathname === "/api/contacts" && request.method === "GET") {
-        const r = await query(env, `SELECT c.id, c.name, co.id AS contact_id, co.email, co.phone, co.status, co.last_sent_at
-          FROM companies c JOIN contacts co ON co.company_id=c.id ORDER BY c.name`);
-        return json(r.rows);
+        const r = await sql.query("SELECT c.id, c.name, co.id AS contact_id, co.email, co.phone, co.status, co.last_sent_at FROM companies c JOIN contacts co ON co.company_id=c.id ORDER BY c.name");
+        return json(r);
       }
 
       if (url.pathname === "/api/send" && request.method === "POST") {
         const body = await request.json();
         if (!body.contact_id) return json({ ok: false, error: "contact_id obrigatorio" }, 400);
-        const r = await query(env, `SELECT co.id AS contact_id, co.email, co.status, c.name
-          FROM contacts co JOIN companies c ON c.id=co.company_id WHERE co.id=$1`, [body.contact_id]);
-        if (!r.rows[0]) return json({ ok: false, error: "Contato nao encontrado" }, 404);
-        if (r.rows[0].status === "unsubscribed") return json({ ok: false, error: "Contato descadastrado" }, 409);
+        const r = await sql.query("SELECT co.id AS contact_id, co.email, co.status, c.name FROM contacts co JOIN companies c ON c.id=co.company_id WHERE co.id=$1", [body.contact_id]);
+        if (!r[0]) return json({ ok: false, error: "Contato nao encontrado" }, 404);
+        if (r[0].status === "unsubscribed") return json({ ok: false, error: "Contato descadastrado" }, 409);
         return json({ ok: false, error: "SMTP KingHost ainda nao configurado" }, 503);
       }
 
