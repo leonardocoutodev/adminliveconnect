@@ -15,7 +15,8 @@ const CONTACTS = [
   ["GO Training Center Ilhéus", "goct.ilheus@gmail.com"],
   ["SENAI Ilhéus", "cacsenaiilheus@fieb.org.br"],
   ["Centro Educacional Álvaro Melo Vieira (CEEP-AMEV)", "ceamev2010@hotmail.com"],
-  ["IES Capacitação", "contato@iescapacitacao.com.br"]
+  ["IES Capacitação", "contato@iescapacitacao.com.br"],
+  ["TESTE INTERNO — Leonardo Couto Santos", "leonardo.couto.santos96@gmail.com"]
 ].map(([name, email], i) => ({ id: i + 1, name, email, status: "active" }));
 
 const CAMPAIGN = {
