@@ -1,6 +1,6 @@
 const CORS = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "Content-Type, X-Admin-Token",
+  "Access-Control-Allow-Headers": "Content-Type",
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS"
 };
 
@@ -25,14 +25,34 @@ const CAMPAIGN = {
 };
 
 const RELAY_URL = "https://www.liveconnect.com.br/smtp.php";
+const ALLOWED_ORIGINS = new Set([
+  "https://adminliveconnect.lcpro.workers.dev",
+  "https://www.liveconnect.com.br",
+  "https://liveconnect.com.br"
+]);
+const SEND_COOLDOWN_MS = 15000;
+const sendAttempts = new Map();
 
 const json = (data, status = 200) => new Response(JSON.stringify(data), {
   status,
   headers: { ...CORS, "Content-Type": "application/json; charset=utf-8" }
 });
 
-function authorized(request, env) {
-  return !!env.ADMIN_TOKEN && request.headers.get("X-Admin-Token") === env.ADMIN_TOKEN;
+function requestComesFromPanel(request) {
+  const origin = request.headers.get("Origin");
+  if (origin && ALLOWED_ORIGINS.has(origin)) return true;
+  const referer = request.headers.get("Referer");
+  if (!referer) return false;
+  try { return ALLOWED_ORIGINS.has(new URL(referer).origin); } catch (_) { return false; }
+}
+
+function rateLimit(request) {
+  const ip = request.headers.get("CF-Connecting-IP") || "unknown";
+  const now = Date.now();
+  const previous = sendAttempts.get(ip) || 0;
+  if (now - previous < SEND_COOLDOWN_MS) return false;
+  sendAttempts.set(ip, now);
+  return true;
 }
 
 function messageFor(company) {
@@ -41,9 +61,6 @@ function messageFor(company) {
 
 async function sendEmail(env, contact) {
   if (!env.RELAY_TOKEN) throw new Error("RELAY_TOKEN ainda não configurado no Worker");
-
-  const text = messageFor(contact.name);
-
   const response = await fetch(RELAY_URL, {
     method: "POST",
     headers: {
@@ -54,16 +71,11 @@ async function sendEmail(env, contact) {
       to: contact.email,
       company: contact.name,
       subject: CAMPAIGN.subject,
-      body: text
+      body: messageFor(contact.name)
     })
   });
-
   const data = await response.json().catch(() => ({}));
-
-  if (!response.ok || !data.ok) {
-    throw new Error(data?.error || `Relay SMTP retornou HTTP ${response.status}`);
-  }
-
+  if (!response.ok || !data.ok) throw new Error(data?.error || `Relay SMTP retornou HTTP ${response.status}`);
   return data;
 }
 
@@ -83,26 +95,19 @@ export default {
       });
     }
 
-    if (!authorized(request, env)) return json({ ok: false, error: "Não autorizado" }, 401);
-
     if (url.pathname === "/api/contacts" && request.method === "GET") return json(CONTACTS);
     if (url.pathname === "/api/campaign" && request.method === "GET") return json(CAMPAIGN);
 
     if (url.pathname === "/api/send" && request.method === "POST") {
+      if (!requestComesFromPanel(request)) return json({ ok: false, error: "Envio permitido somente pelo painel Live Connect." }, 403);
+      if (!rateLimit(request)) return json({ ok: false, error: "Aguarde 15 segundos antes de enviar outro e-mail." }, 429);
       try {
         const body = await request.json();
         const contact = CONTACTS.find(x => x.id === Number(body.contact_id));
-
         if (!contact) return json({ ok: false, error: "Contato não encontrado" }, 404);
         if (contact.status !== "active") return json({ ok: false, error: "Contato inativo" }, 409);
-
         const result = await sendEmail(env, contact);
-
-        return json({
-          ok: true,
-          message: `E-mail enviado para ${contact.email}`,
-          id: result?.id || null
-        });
+        return json({ ok: true, message: `E-mail enviado para ${contact.email}`, id: result?.id || null });
       } catch (error) {
         console.error(error);
         return json({ ok: false, error: error.message || "Erro no envio" }, 500);
