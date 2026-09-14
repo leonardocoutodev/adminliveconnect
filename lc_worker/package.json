@@ -3,6 +3,5 @@
   "private": true,
   "type": "module",
   "scripts": { "deploy": "wrangler deploy" },
-  "dependencies": { "@neondatabase/serverless": "^1.0.1" },
   "devDependencies": { "wrangler": "^4.68.0" }
 }
