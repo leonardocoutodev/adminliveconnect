@@ -23,6 +23,8 @@ const CAMPAIGN = {
   body: `Olá, time da [empresa]!\n\nTudo bem?\n\nAqui é da Live Connect Escola de Profissões, em Ilhéus/BA.\n\nAlém dos nossos cursos e atividades de formação profissional, estamos disponibilizando nossas salas para locação por empresas que precisam de um espaço profissional para:\n\n• treinamentos;\n• reuniões;\n• workshops;\n• processos seletivos;\n• encontros de equipe;\n• palestras e outros eventos corporativos.\n\nNossa unidade está localizada no Ed. Fraga Center, na Rua Sá Oliveira, 18, sala 01, Centro, Ilhéus.\n\nEstamos entrando em contato porque acreditamos que o espaço pode ser útil para o time da [empresa] quando houver necessidade de realizar atividades presenciais em Ilhéus.\n\nSe tiver interesse, posso enviar fotos, estrutura, capacidade, disponibilidade e valores das salas.\n\nPosso te encaminhar essas informações?\n\nAbraços,\n\nLive Connect Escola de Profissões\n(73) 3223-7593\ncomercial@liveconnect.com.br\nwww.liveconnect.com.br\n\nSe este contato não fizer sentido para o time da empresa, basta avisar e não faremos novos contatos sobre esta oferta.`
 };
 
+const RELAY_URL = "https://www.liveconnect.com.br/smtp.php";
+
 const json = (data, status = 200) => new Response(JSON.stringify(data), {
   status,
   headers: { ...CORS, "Content-Type": "application/json; charset=utf-8" }
@@ -32,37 +34,35 @@ function authorized(request, env) {
   return !!env.ADMIN_TOKEN && request.headers.get("X-Admin-Token") === env.ADMIN_TOKEN;
 }
 
-function htmlEscape(value) {
-  return String(value).replace(/[&<>\"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));
-}
-
 function messageFor(company) {
   return CAMPAIGN.body.replaceAll("[empresa]", company);
 }
 
-function toHtml(text) {
-  return text.split("\n").map(line => line ? htmlEscape(line) : "<br>").join("<br>");
-}
-
 async function sendEmail(env, contact) {
-  if (!env.RESEND_API_KEY) throw new Error("RESEND_API_KEY ainda não configurada");
+  if (!env.RELAY_TOKEN) throw new Error("RELAY_TOKEN ainda não configurado no Worker");
+
   const text = messageFor(contact.name);
-  const response = await fetch("https://api.resend.com/emails", {
+
+  const response = await fetch(RELAY_URL, {
     method: "POST",
     headers: {
-      "Authorization": `Bearer ${env.RESEND_API_KEY}`,
-      "Content-Type": "application/json"
+      "Content-Type": "application/json",
+      "X-Live-Connect-Token": env.RELAY_TOKEN
     },
     body: JSON.stringify({
-      from: "Live Connect Escola de Profissões <comercial@liveconnect.com.br>",
-      to: [contact.email],
+      to: contact.email,
+      company: contact.name,
       subject: CAMPAIGN.subject,
-      text,
-      html: toHtml(text)
+      body: text
     })
   });
+
   const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data?.message || data?.error || `Resend retornou HTTP ${response.status}`);
+
+  if (!response.ok || !data.ok) {
+    throw new Error(data?.error || `Relay SMTP retornou HTTP ${response.status}`);
+  }
+
   return data;
 }
 
@@ -72,7 +72,14 @@ export default {
     const url = new URL(request.url);
 
     if (url.pathname === "/api/health") {
-      return json({ ok: true, service: "live-connect-prospeccao", database: false, neon: false, contacts: CONTACTS.length, email_provider: "resend" });
+      return json({
+        ok: true,
+        service: "live-connect-prospeccao",
+        database: false,
+        neon: false,
+        contacts: CONTACTS.length,
+        email_provider: "kinghost-smtp"
+      });
     }
 
     if (!authorized(request, env)) return json({ ok: false, error: "Não autorizado" }, 401);
@@ -84,13 +91,20 @@ export default {
       try {
         const body = await request.json();
         const contact = CONTACTS.find(x => x.id === Number(body.contact_id));
+
         if (!contact) return json({ ok: false, error: "Contato não encontrado" }, 404);
         if (contact.status !== "active") return json({ ok: false, error: "Contato inativo" }, 409);
+
         const result = await sendEmail(env, contact);
-        return json({ ok: true, message: `E-mail enviado para ${contact.email}`, id: result?.id || null });
+
+        return json({
+          ok: true,
+          message: `E-mail enviado para ${contact.email}`,
+          id: result?.id || null
+        });
       } catch (error) {
         console.error(error);
-        return json({ ok: false, error: error.message }, 500);
+        return json({ ok: false, error: error.message || "Erro no envio" }, 500);
       }
     }
 
