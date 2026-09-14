@@ -4,20 +4,17 @@
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Live Connect - Prospecção</title>
 <style>
-body{font-family:system-ui,-apple-system,Segoe UI,sans-serif;margin:0;background:#f5f7fb;color:#172033}header{padding:24px;background:#111827;color:#fff}main{max-width:1100px;margin:24px auto;padding:0 16px}.card{background:#fff;border-radius:14px;padding:20px;margin-bottom:16px;box-shadow:0 4px 18px #0001}table{width:100%;border-collapse:collapse}th,td{padding:12px;border-bottom:1px solid #eee;text-align:left}button{border:0;border-radius:9px;padding:9px 13px;cursor:pointer;background:#111827;color:#fff}.muted{color:#667085}.ok{color:#067647}.err{color:#b42318}input{padding:10px;border:1px solid #d0d5dd;border-radius:8px;width:min(520px,100%);box-sizing:border-box}
+body{font-family:system-ui,-apple-system,Segoe UI,sans-serif;margin:0;background:#f5f7fb;color:#172033}header{padding:24px;background:#111827;color:#fff}main{max-width:1100px;margin:24px auto;padding:0 16px}.card{background:#fff;border-radius:14px;padding:20px;margin-bottom:16px;box-shadow:0 4px 18px #0001}table{width:100%;border-collapse:collapse}th,td{padding:12px;border-bottom:1px solid #eee;text-align:left}button{border:0;border-radius:9px;padding:9px 13px;cursor:pointer;background:#111827;color:#fff}.muted{color:#667085}.ok{color:#067647}.err{color:#b42318}.sending{opacity:.65;pointer-events:none}
 </style></head>
 <body><header><h1>Live Connect Escola de Profissões</h1><div>Prospecção — Locação de salas em Ilhéus</div></header>
 <main>
-<div class="card"><h2>Acesso</h2><p class="muted">Digite o token administrativo configurado no Cloudflare. Ele fica somente nesta sessão do navegador.</p><input id="token" type="password" placeholder="ADMIN_TOKEN"><button onclick="saveToken()">Entrar</button> <span id="authmsg"></span></div>
-<div class="card"><h2>Painel de contatos</h2><p class="muted">Apenas contatos com e-mail público conhecido. O botão Enviar dispara o e-mail personalizado.</p><button onclick="load()">Atualizar</button> <span id="msg"></span></div>
-<div class="card"><table><thead><tr><th>Empresa</th><th>E-mail</th><th>Status</th><th>Ação</th></tr></thead><tbody id="rows"><tr><td colspan="4">Entre com o token para carregar.</td></tr></tbody></table></div>
+<div class="card"><h2>Painel de contatos</h2><p class="muted">Contatos com e-mail público conhecido. O botão Enviar dispara o e-mail personalizado. A proteção do envio funciona automaticamente, sem token ou senha no painel.</p><button onclick="load()">Atualizar</button> <span id="msg"></span></div>
+<div class="card"><table><thead><tr><th>Empresa</th><th>E-mail</th><th>Status</th><th>Ação</th></tr></thead><tbody id="rows"><tr><td colspan="4">Carregando contatos...</td></tr></tbody></table></div>
 </main>
 <script>
-const saved=sessionStorage.getItem('lc_admin_token'); if(saved) token.value=saved;
-function headers(){return {'X-Admin-Token':sessionStorage.getItem('lc_admin_token')||''};}
-function saveToken(){const v=token.value.trim();if(!v){authmsg.textContent=' Informe o token.';authmsg.className='err';return;}sessionStorage.setItem('lc_admin_token',v);authmsg.textContent=' Token salvo nesta sessão.';authmsg.className='ok';load();}
 async function load(){
- try{const r=await fetch('/api/contacts',{headers:headers()});const d=await r.json();if(!r.ok)throw new Error(d.error||'Acesso negado');rows.innerHTML=d.map(x=>`<tr><td>${x.name}</td><td>${x.email}</td><td>${x.status}</td><td><button onclick="send(${x.id},'${x.name.replace(/'/g,"\\'")}')">Enviar</button></td></tr>`).join('');msg.textContent=` ${d.length} contatos`;msg.className='ok'}catch(e){rows.innerHTML=`<tr><td colspan="4">${e.message}</td></tr>`;msg.textContent='';}}
-async function send(id,name){if(!confirm(`Enviar o e-mail para ${name}?`))return;const r=await fetch('/api/send',{method:'POST',headers:{...headers(),'Content-Type':'application/json'},body:JSON.stringify({contact_id:id})});const d=await r.json();alert(d.ok?`Enviado com sucesso.\n${d.message}`:(d.error||'Falha no envio'));}
-if(saved) load();
+ try{const r=await fetch('/api/contacts');const d=await r.json();if(!r.ok)throw new Error(d.error||'Falha ao carregar contatos');rows.innerHTML=d.map(x=>`<tr><td>${escapeHtml(x.name)}</td><td>${escapeHtml(x.email)}</td><td>${escapeHtml(x.status)}</td><td><button onclick="send(${x.id},this)">Enviar</button></td></tr>`).join('');msg.textContent=` ${d.length} contatos`;msg.className='ok'}catch(e){rows.innerHTML=`<tr><td colspan="4">${escapeHtml(e.message)}</td></tr>`;msg.textContent='';}}
+function escapeHtml(s){return String(s).replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));}
+async function send(id,button){if(!confirm('Enviar o e-mail para este contato?'))return;button.classList.add('sending');button.textContent='Enviando...';try{const r=await fetch('/api/send',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({contact_id:id})});const d=await r.json();alert(d.ok?`Enviado com sucesso.\n${d.message}`:(d.error||'Falha no envio'));}catch(e){alert('Falha no envio: '+e.message)}finally{button.classList.remove('sending');button.textContent='Enviar';}}
+load();
 </script></body></html>
