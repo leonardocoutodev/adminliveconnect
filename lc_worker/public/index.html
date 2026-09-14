@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Live Connect - Prospecção</title>
+<style>
+body{font-family:system-ui,-apple-system,Segoe UI,sans-serif;margin:0;background:#f5f7fb;color:#172033}header{padding:24px;background:#111827;color:#fff}main{max-width:1100px;margin:24px auto;padding:0 16px}.card{background:#fff;border-radius:14px;padding:20px;margin-bottom:16px;box-shadow:0 4px 18px #0001}table{width:100%;border-collapse:collapse}th,td{padding:12px;border-bottom:1px solid #eee;text-align:left}button{border:0;border-radius:9px;padding:9px 13px;cursor:pointer;background:#111827;color:#fff}.muted{color:#667085}.ok{color:#067647}.err{color:#b42318}
+</style></head>
+<body><header><h1>Live Connect Escola de Profissões</h1><div>Prospecção — Locação de salas em Ilhéus</div></header>
+<main><div class="card"><h2>Painel de contatos</h2><p class="muted">Apenas contatos com e-mail público conhecido.</p><button onclick="load()">Atualizar</button> <span id="msg"></span></div>
+<div class="card"><table><thead><tr><th>Empresa</th><th>E-mail</th><th>Status</th><th>Ação</th></tr></thead><tbody id="rows"><tr><td colspan="4">Carregando...</td></tr></tbody></table></div></main>
+<script>
+async function load(){
+ try{const r=await fetch('/api/contacts');const d=await r.json();if(!Array.isArray(d))throw new Error(d.error||'Erro');rows.innerHTML=d.map(x=>`<tr><td>${x.name}</td><td>${x.email}</td><td>${x.status}</td><td><button onclick="send(${x.contact_id})">Enviar</button></td></tr>`).join('');msg.textContent=` ${d.length} contatos`;msg.className='ok'}catch(e){rows.innerHTML=`<tr><td colspan="4">Banco ainda não conectado. ${e.message}</td></tr>`;msg.textContent=' Banco pendente';msg.className='err'}}
+async function send(id){if(!confirm('Confirmar envio para este contato?'))return;const r=await fetch('/api/send',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({contact_id:id})});const d=await r.json();alert(d.error||'Enviado');}
+load();
+</script></body></html>
